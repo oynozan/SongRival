@@ -92,7 +92,7 @@ class Bot():
             "*2)* Now you can start matchmaking. Select a bet amount and wait for a rival to compete against.\n" +
             "*3)* You will be sent a song. Listen to it and guess the song title.\n" +
             "*4)* If none of the players answer correctly, it's a draw. If one of the players answers correctly, they win the bet.\n" +
-            "*5)* You have 120 seconds to answer. If you don't answer in time, you can't win. If both of you timeout, it's a draw.\n" +
+            "*5)* You have 120 seconds to answer. If you don't answer in time, you can't win. If both of you time out, it's a draw.\n" +
             "*6)* You can withdraw your earnings to your wallet anytime."
         )
         return "start"
