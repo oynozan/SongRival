@@ -2,6 +2,7 @@
 Song Rival is a music Telegram bot where users can bet cryptocurrencies and compete to guess a song faster.
 
 # How to play?
+Start a conversation with `@SongRivalBot` on Telegram, deposit some BNB to your wallet (optional), and start competing with others.
 
 ## How it works?
 The application consists 2 parts:
