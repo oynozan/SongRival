@@ -1,0 +1,14 @@
+.env
+
+temp/*
+!temp/.gitkeep
+
+db/*
+!db/.gitkeep
+
+data/artists.py
+
+__pycache__/
+
+build
+dist
