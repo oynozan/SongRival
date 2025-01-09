@@ -556,7 +556,7 @@ class Bot():
 
         await Helper.sendMessage(
             update,
-            f"Waiting for transaction. Transaction hash: *{hash}*\n\nhttps://bscscan.com/tx/{hash}"
+            f"Waiting for transaction. Transaction hash: *{hash}*\n\nhttps://bscscan.com/tx/0x{hash}"
         )
 
         return "start"
