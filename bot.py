@@ -4,7 +4,6 @@ import uuid
 import random
 import asyncio
 from game import Game
-from bucket import Bucket
 from wallet import Wallet
 from asyncio import sleep
 from dotenv import load_dotenv
@@ -23,7 +22,6 @@ load_dotenv() # Take environment variables from .env.
 
 # Instances
 wallet = Wallet()
-bucket = Bucket()
 
 # Constants
 FEE = 0.5 # Cut from every game
@@ -40,16 +38,24 @@ class Bot():
         ## Bot commands
         self.application = Application.builder().token(self.BOT_TOKEN).build()
 
+        # Handlers
+        startHandler = CommandHandler("start", self.start)
+        rulesHandler = CommandHandler("rules", self.rules)
+        cancelHandler = CommandHandler("cancel", self.start)
+        depositHandler = CommandHandler("deposit", self.deposit)
+        withdrawHandler = CommandHandler("withdraw", self.withdraw)
+
         # Callback query handler
         conv_handler = ConversationHandler(
             entry_points=[
-                CommandHandler("start", self.start),
-                CommandHandler("rules", self.rules),
-                CommandHandler("deposit", self.deposit),
-                CommandHandler("withdraw", self.withdraw),
+                startHandler,
+                rulesHandler,
+                depositHandler,
+                withdrawHandler,
             ],
             states = {
                 "start": [
+                    startHandler,
                     CallbackQueryHandler(self.start, pattern="^start$"),
                     CallbackQueryHandler(self.rules, pattern="^rules$"),
                     CallbackQueryHandler(self.newRace, pattern="^race$"),
@@ -63,13 +69,19 @@ class Bot():
                     CallbackQueryHandler(self.matchmaking, pattern="^bet_.*$"),
                 ],
                 "matchmaking": [
+                    startHandler,
+                    rulesHandler,
+                    depositHandler,
+                    withdrawHandler,
                     CallbackQueryHandler(self.stop, pattern="^stop$"),
                     CallbackQueryHandler(self.answer, pattern="^answer_.*$"),
                 ],
                 "withdraw_address": [
+                    cancelHandler,
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.withdrawAmount)
                 ],
                 "withdraw_amount": [
+                    cancelHandler,
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.handleWithdraw)
                 ],
             },
@@ -112,7 +124,7 @@ class Bot():
                 self.matchmakingPool[self.bets[i]].remove(uid)
 
                 # Remove game instance
-                self.gameInstances.pop(gameID, None)
+                self.removeGame(gameID)
 
                 return True
         return False
@@ -196,6 +208,8 @@ class Bot():
             # Start game for both parties
             await self.startMatch([result["u1"], result["u2"]], result["bet"])
 
+        print("Total played games: ", len(self.gameInstances))
+
         return "matchmaking"
 
     async def startMatch(self, players: list, betAmount: float):
@@ -210,7 +224,7 @@ class Bot():
         songForm = lambda song: song.split('/')[-1].split(".")[0]
 
         # Load songs from the bucket
-        songs = bucket.loadByType("mp3")
+        songs = Game.loadSongs()
 
         # Select a random song as answer
         correctSong = songForm(random.choice(songs))
@@ -225,7 +239,7 @@ class Bot():
 
         # Download selected song temporarily
         path = f"temp/temp_{correctSong}.mp3"
-        bucket.downloadFile(f"songs/{correctSong}.mp3", path)
+        Game.downloadSong(correctSong, path)
 
         tasks = [
             asyncio.create_task(startGame(gameID, players[0], correctSong, songsPool, path)),
@@ -237,7 +251,6 @@ class Bot():
         await asyncio.gather(*tasks)
 
     async def gameThread(self, gameID, player, correctSong, songsPool, path):
-        print(player)
         await Helper.sendMessageToID(
             bot=self.application.bot,
             id=player,
@@ -338,6 +351,9 @@ class Bot():
                 f"Correct song was *{correctForm}*" +
                 "\n\nWanna play again? /start"
             )
+
+            # Remove game instance
+            self.removeGame(gameID)
         # Incorrect answer
         else:
             if len(game.answered) == 0:
@@ -347,11 +363,13 @@ class Bot():
                     "Wrong answer! Waiting for your rival's answer.\nIf they answer wrong too, it's a draw."
                 )
                 # Other User
+                """
                 await Helper.sendMessageToID(
                     self.application.bot,
                     game.otherUser(player),
-                    "Your opponent has answered before you. If they answer correctly, you lose."
+                    "Your opponent has answered before you. It was a wrong answer."
                 )
+                """
             else:
                 # User Reply
                 await Helper.sendMessage(
@@ -375,10 +393,15 @@ class Bot():
         if len(game.answered) == 2:
             await game.end()
 
+            # Remove game instance
+            self.removeGame(gameID)
+
         return "start"
 
     async def timerHandler(self, gameID, player):
-        game = self.gameInstances[gameID]
+        try: game = self.gameInstances[gameID]
+        except: return False
+
         ts = game.ts
         seconds = 0
         diff = time.time() - ts
@@ -401,6 +424,9 @@ class Bot():
                     else "Your rival has timed out. You've won.\n\n"+
                     "Wanna play again? /start"
                 )
+
+                # Remove game instance
+                self.removeGame(gameID)
             elif len(game.answered) == 0:
                 await Helper.sendMessageToID(
                     self.application.bot,
@@ -417,6 +443,8 @@ class Bot():
                 )
 
             await game.end()
+            self.removeGame(gameID)
+
             return False
 
         # Time notifications
@@ -440,22 +468,29 @@ class Bot():
 
         ## Adjust balance
         # Send losers bet to the winner's wallet address
-        if game.betAmount != 0:
-            cutFee = game.betAmount * FEE
-            res = wallet.withdraw(
-                game.otherUser(player),
-                wallet.getWallet(player)["address"],
-                game.betAmount - cutFee
-            )
-            print(f"Transaction Hash: {res.tx_hash}")
-
-            # Send fee to the fee address
-            if res.tx_hash:
-                wallet.withdraw(
+        try:
+            if game.betAmount != 0:
+                cutFee = game.betAmount * FEE
+                res = wallet.withdraw(
                     game.otherUser(player),
-                    os.getenv("FEE_ADDRESS"),
-                    cutFee
+                    wallet.getWallet(player)["address"],
+                    game.betAmount - cutFee
                 )
+                print(f"Transaction Hash: {res.tx_hash}")
+
+                # Send fee to the fee address
+                if res.tx_hash:
+                    wallet.withdraw(
+                        game.otherUser(player),
+                        os.getenv("FEE_ADDRESS"),
+                        cutFee
+                    )
+        except Exception as e:
+            print("An error occurred while adjusting balance.")
+            print(e)
+
+    def removeGame(self, gameID):
+        self.gameInstances.pop(gameID, None)
 
     async def deposit(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await Choices.deposit(update)
@@ -473,7 +508,7 @@ class Bot():
         await Helper.sendMessage(update, f"Your balance is: *{balance}* BNB")
 
         # Ask for withdraw address
-        await Helper.sendMessage(update, "Enter the BEP-20 address you want to withdraw to:")
+        await Helper.sendMessage(update, "Enter the BEP-20 address you want to withdraw to:\n\nTo cancel, type /cancel")
         return "withdraw_address"
 
     async def withdrawAmount(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -485,7 +520,7 @@ class Bot():
         }
 
         # Ask for withdraw amount
-        await Helper.sendMessage(update, "Enter the amount you want to withdraw:")
+        await Helper.sendMessage(update, "Enter the amount you want to withdraw:\n\nTo cancel, type /cancel")
 
         return "withdraw_amount"
 
@@ -517,7 +552,7 @@ class Bot():
             await Helper.sendMessage(update, "An error occurred while processing the withdrawal.")
             return "start"
 
-        hash = res.tx_hash
+        hash = res["tx_hash"]
 
         await Helper.sendMessage(
             update,
@@ -645,3 +680,6 @@ class Helper:
             chat_id=id,
             voice=file
         )
+
+if __name__ == "__main__":
+    Bot()

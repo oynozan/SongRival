@@ -61,21 +61,22 @@ class Wallet:
             raise ValueError("Insufficient funds.")
 
         # Construct the transaction
-        nonce = self.web3.eth.getTransactionCount(address)
+        nonce = self.web3.eth.get_transaction_count(address)
         transaction = {
             'nonce': nonce,
             'to': recipientAddress,
-            'value': self.web3.toWei(amount, 'ether'),
-            'gasPrice': self.web3.toWei('20', 'gwei')
+            'value': self.web3.to_wei(amount, 'ether'),
+            'gasPrice': self.web3.to_wei('20', 'gwei')
         }
 
-        transaction["gas"] = self.web3.eth.estimateGas(transaction)
+        transaction["gas"] = self.web3.eth.estimate_gas(transaction)
 
         # Sign the transaction
         signed_txn = self.web3.eth.account.sign_transaction(transaction, private_key)
+        print(signed_txn)
 
         # Send the transaction
-        tx_hash = self.web3.eth.send_raw_transaction(signed_txn.rawTransaction)
+        tx_hash = self.web3.eth.send_raw_transaction(signed_txn.raw_transaction)
         self.db.insert("transactions", {"tx_hash": tx_hash.hex(), "uid": uid, "address": address, "amount": amount})
 
-        return { tx_hash: tx_hash.hex() }
+        return { "tx_hash": tx_hash.hex() }

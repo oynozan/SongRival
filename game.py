@@ -118,3 +118,12 @@ class Game:
             else:
                 return instance.id
         return None
+
+    @staticmethod
+    def loadSongs():
+        songs = songsDB.fetch_all("SELECT id FROM songs")
+        return [song["id"] for song in songs]
+
+    @staticmethod
+    def downloadSong(song, path):
+        bucket.downloadFile(f"songs/{song}.mp3", path)
